@@ -1,6 +1,5 @@
 import sys
 import argparse
-import subprocess
 import psutil as ps
 
 def list_processes(sort_by, desc_order):
@@ -11,9 +10,9 @@ def list_processes(sort_by, desc_order):
             p_info = proc.info
             pid = int(p_info['pid'])
             name = str(p_info['name'])
-            path = str(p_info['exe'])
-            cmdline = " ".join(p_info['cmdline'])
-            mem_mb = p_info['memory_info'].rss / 1048576 #1024*1024
+            path = str(p_info['exe']) if p_info['exe'] else ''
+            cmdline = " ".join(p_info['cmdline']) if p_info['cmdline'] else ''
+            mem_mb = p_info['memory_info'].rss / 1048576  #1024*1024
             cpu_usage = proc.cpu_percent(interval=0.01)
             
             process_list.append({
@@ -53,18 +52,28 @@ def list_processes(sort_by, desc_order):
         print(f"{pid_str:<8} {name_str:<20} {cpu_str:<8} {mem_str:<10} {path_str:<25} {cmd_str}")
 
 
+
 def run_process(path, args=None, cwd=None):
     try:
+
         cmd = [path]
+        if path.endswith('.py'):
+            cmd = ['python3', path]
+        elif path.endswith('.sh'):
+            cmd = ['bash', path]
+
         if args:
             cmd.extend(args)
         
-        proc = subprocess.Popen(
+        print(cmd)
+        proc = ps.Popen(
             cmd,
             cwd=cwd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL
+            stdout=ps.subprocess.DEVNULL,
+            stderr=ps.subprocess.DEVNULL,
+            stdin=ps.subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True
         )
         
         print(f"Process started with PID: {proc.pid}")
@@ -79,7 +88,6 @@ def run_process(path, args=None, cwd=None):
     except Exception as e:
         print(f"Error starting process: {e}", file=sys.stderr)
         return 3
-
 
 def kill_process(pid):
     try:
@@ -105,6 +113,29 @@ def kill_process(pid):
     except Exception as e:
         print(f"Error killing process {pid}: {e}", file=sys.stderr)
         return 6
+    
+
+def suspend_process(pid):
+    try:
+        proc = ps.Process(pid)        
+        if proc.status() == ps.STATUS_STOPPED:
+            print(f"Process {pid} is already suspended")
+            return 7
+        
+        proc.suspend()
+        print(f"Process {pid} suspended")
+        return 0
+        
+    except ps.NoSuchProcess:
+        print(f"Error: PID not found: {pid}", file=sys.stderr)
+        return 8
+    except ps.AccessDenied:
+        print(f"Error: Insufficient permission for PID {pid}", file=sys.stderr)
+        return 9
+    except Exception as e:
+        print(f"Error suspending process {pid}: {e}", file=sys.stderr)
+        return 10
+    
 
 
 #############################MAIN#######################################
@@ -126,7 +157,11 @@ run_parser.add_argument('--cwd', help='Working directory for the process')
 #pentru kill
 kill_parser = subparsers.add_parser('kill', help='Terminate a process')
 kill_parser.add_argument('pid', type=int, help='Process ID to kill')
-    
+
+#pentru suspend
+suspend_parser = subparsers.add_parser('suspend', help='Suspend (pause) a process')
+suspend_parser.add_argument('pid', type=int, help='Process ID to suspend')
+
 args = parser.parse_args()
 
 if args.command == "view":
@@ -135,5 +170,7 @@ elif args.command == 'run':
     run_process(args.path, args.args, args.cwd)
 elif args.command == 'kill':
     kill_process(args.pid)
+elif args.command == 'suspend':
+    suspend_process(args.pid)
 else:
     parser.print_help()
