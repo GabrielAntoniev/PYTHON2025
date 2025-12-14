@@ -1,6 +1,7 @@
 import sys
 import argparse
 import psutil as ps
+import os 
 
 def list_processes(sort_by, desc_order):
     process_list = []
@@ -56,11 +57,22 @@ def list_processes(sort_by, desc_order):
 def run_process(path, args=None, cwd=None):
     try:
 
-        cmd = [path]
-        if path.endswith('.py'):
-            cmd = ['python3', path]
-        elif path.endswith('.sh'):
-            cmd = ['bash', path]
+        if cwd and not os.path.isabs(path):
+            full_path = os.path.join(cwd, path)
+        else:
+            full_path = path
+        
+        full_path = os.path.expanduser(full_path)
+
+        if not os.path.exists(full_path):
+            print(f"Error: Executable not found: {full_path}", file=sys.stderr)
+            exit(1)
+        
+        cmd = [full_path]
+        if full_path.endswith('.py'):
+            cmd = ['python3', full_path]
+        elif full_path.endswith('.sh'):
+            cmd = ['bash', full_path]
 
         if args:
             cmd.extend(args)
@@ -81,13 +93,13 @@ def run_process(path, args=None, cwd=None):
         
     except FileNotFoundError:
         print(f"Error: Executable not found: {path}", file=sys.stderr)
-        return 1
+        exit(1)
     except PermissionError:
         print(f"Error: Permission denied: {path}", file=sys.stderr)
-        return 2
+        exit(2)
     except Exception as e:
         print(f"Error starting process: {e}", file=sys.stderr)
-        return 3
+        exit(3)
 
 def kill_process(pid):
     try:
@@ -106,13 +118,13 @@ def kill_process(pid):
             
     except ps.NoSuchProcess:
         print(f"Error: PID not found: {pid}", file=sys.stderr)
-        return 4
+        exit(4)
     except ps.AccessDenied:
         print(f"Error: Insufficient permission for PID {pid}", file=sys.stderr)
-        return 5
+        exit(5)
     except Exception as e:
         print(f"Error killing process {pid}: {e}", file=sys.stderr)
-        return 6
+        exit(6)
     
 
 def suspend_process(pid):
@@ -120,7 +132,7 @@ def suspend_process(pid):
         proc = ps.Process(pid)        
         if proc.status() == ps.STATUS_STOPPED:
             print(f"Process {pid} is already suspended")
-            return 7
+            exit(7)
         
         proc.suspend()
         print(f"Process {pid} suspended")
@@ -128,14 +140,35 @@ def suspend_process(pid):
         
     except ps.NoSuchProcess:
         print(f"Error: PID not found: {pid}", file=sys.stderr)
-        return 8
+        exit(4)
     except ps.AccessDenied:
         print(f"Error: Insufficient permission for PID {pid}", file=sys.stderr)
-        return 9
+        exit(5)
     except Exception as e:
         print(f"Error suspending process {pid}: {e}", file=sys.stderr)
-        return 10
+        exit(8)
     
+
+def resume_process(pid):
+    try:
+        proc = ps.Process(pid)        
+        if proc.status() != ps.STATUS_STOPPED:
+            print(f"Process {pid} is not suspended")
+            return 0
+        
+        proc.resume()
+        print(f"Process {pid} resumed")
+        return 0
+        
+    except ps.NoSuchProcess:
+        print(f"Error: PID not found: {pid}", file=sys.stderr)
+        exit(4)
+    except ps.AccessDenied:
+        print(f"Error: Insufficient permission for PID {pid}", file=sys.stderr)
+        exit(5)
+    except Exception as e:
+        print(f"Error resuming process {pid}: {e}", file=sys.stderr)
+        exit(9)
 
 
 #############################MAIN#######################################
@@ -162,6 +195,10 @@ kill_parser.add_argument('pid', type=int, help='Process ID to kill')
 suspend_parser = subparsers.add_parser('suspend', help='Suspend (pause) a process')
 suspend_parser.add_argument('pid', type=int, help='Process ID to suspend')
 
+#pentru resume
+resume_parser = subparsers.add_parser('resume', help='Resume a suspended process')
+resume_parser.add_argument('pid', type=int, help='Process ID to resume')
+
 args = parser.parse_args()
 
 if args.command == "view":
@@ -172,5 +209,7 @@ elif args.command == 'kill':
     kill_process(args.pid)
 elif args.command == 'suspend':
     suspend_process(args.pid)
+elif args.command == 'resume':
+    resume_process(args.pid)
 else:
     parser.print_help()
